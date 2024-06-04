@@ -98,10 +98,11 @@ Valid duration formats:
                   (user-error "Unknown time unit"))
             1))
          (input "")
-         (all-multipliers (mapcar #'car read-duration-multipliers))
-         (smallest
-          (caar (seq-sort (lambda (x y) (< (cdr x) (cdr y)))
-                          read-duration-multipliers)))
+         (multipliers-sorted
+          (seq-sort (lambda (x y) (> (cdr x) (cdr y)))
+                    read-duration-multipliers))
+         (all-multipliers (mapcar #'car multipliers-sorted))
+         (smallest (caar (last multipliers-sorted)))
          (valid-multipliers all-multipliers)
          typed-multipliers
          (seconds
