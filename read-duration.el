@@ -99,7 +99,9 @@ Valid duration formats:
             1))
          (input "")
          (all-multipliers (mapcar #'car read-duration-multipliers))
-         (smallest (car (last all-multipliers)))
+         (smallest
+          (caar (seq-sort (lambda (x y) (< (cdr x) (cdr y)))
+                          read-duration-multipliers)))
          (valid-multipliers all-multipliers)
          typed-multipliers
          (seconds
