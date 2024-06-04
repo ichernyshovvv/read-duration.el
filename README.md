@@ -5,7 +5,7 @@ a user and returns the value in seconds, minutes, hours or any other time unit
 defined in the `read-duration-return-units` custom variable. The function shows
 available input characters (available time unit multipliers (see
 `read-duration-multipliers`) and digits) in the prompt and checks the input
-while the user types. If the user mistypes, the function calls the `ding'
+while the user is typing. If the user mistypes, the function calls the `ding'
 function.
 
 ## Usage
