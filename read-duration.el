@@ -92,7 +92,12 @@ Valid duration formats:
 45
 1d
 1w3h30m"
-  (let* ((input "")
+  (let* ((divisor
+          (if divisor
+              (or (alist-get divisor read-duration-return-units)
+                  (user-error "Unknown time unit"))
+            1))
+         (input "")
          (all-multipliers (mapcar #'car read-duration-multipliers))
          (smallest (car (last all-multipliers)))
          (valid-multipliers all-multipliers)
@@ -147,9 +152,7 @@ Valid duration formats:
                           ms)))
                 (setq input (substring input 0 -1)))
                (t (ding)))))))
-    (if divisor
-        (/ seconds (alist-get divisor read-duration-return-units))
-      seconds)))
+    (/ seconds divisor)))
 
 (provide 'read-duration)
 
