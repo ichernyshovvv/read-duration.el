@@ -69,7 +69,7 @@ the associated MULTIPLIER to calculate a duration in seconds."
                   read-duration-multipliers))
   "The unit with the smallest multiplier.")
 
-(defun read-duration-typed-prompt (acc)
+(defun read-duration--typed-prompt (acc)
   "Generate prompt with already typed values from from ACC."
   (mapconcat
    (lambda (x)
@@ -106,7 +106,7 @@ The result is collected in ACC, ACTIVE-UNITS holds currently active units."
                            (concat "[" unit-chars "]")
                            'face
                            (unless current 'read-duration-shadow)))
-             (typed (read-duration-typed-prompt acc))
+             (typed (read-duration--typed-prompt acc))
              (prompt* (concat (propertize prompt 'face 'minibuffer-prompt)
                               " ([0-9]+" unit-prompt "):"
                               typed))
