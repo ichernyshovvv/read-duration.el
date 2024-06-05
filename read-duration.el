@@ -48,9 +48,9 @@
   :group 'read-duration)
 
 (defcustom read-duration-multipliers
-  '((?w . 604800)
-    (?d . 86400)
-    (?h . 3600)
+  `((?w . ,(* 7 24 60 60))
+    (?d . ,(* 24 60 60))
+    (?h . ,(* 60 60))
     (?m . 60))
   "An alist of unit multipliers used in `read-duration'.
 
