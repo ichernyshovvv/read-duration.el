@@ -96,28 +96,53 @@ the associated MULTIPLIER to calculate a duration in seconds."
                      v))
              m))
 
+(defun read-duration--select-keys (m keys)
+  "Select KEYS from M."
+  (map-filter (lambda (k v)
+                (when (memq k keys)
+                  (cons k v)))
+              m))
+
+(defvar read-duration-ret-char ?\C-m)
+
+(defvar read-duration-bs-char ?\C-?)
+
 (defun read-duration--read-internal (prompt acc active-units)
   "Read a time value in the minibuffer, prompting with PROMPT.
 The result is collected in ACC, ACTIVE-UNITS holds currently active units."
   (if active-units
       (let* ((current (map-elt acc 'current))
-             (unit-chars (map-keys active-units))
              (unit-prompt (propertize
-                           (concat "[" unit-chars "]")
+                           (concat "[" active-units "]")
                            'face
                            (unless current 'read-duration-shadow)))
              (typed (read-duration--typed-prompt acc))
              (prompt* (concat (propertize prompt 'face 'minibuffer-prompt)
                               " ([0-9]+" unit-prompt "):"
                               typed))
-             (choices (append (and current unit-chars)
+             (choices (append (and current active-units)
                               (number-sequence ?0 ?9)
-                              (list ?\C-m)))
+                              (unless (seq-empty-p acc)
+                                (list read-duration-bs-char))
+                              (list read-duration-ret-char)))
              (ch (read-char-choice prompt* choices)))
-        (cond ((= ?\C-m ch) acc)
-              ((map-elt active-units ch)
-               (let ((acc (read-duration--rename-key acc 'current ch))
-                     (new-units (map-delete active-units ch)))
+        (cond ((= read-duration-ret-char ch) acc)
+              ((= read-duration-bs-char ch)
+               (if current
+                   (let* ((acc (map-merge
+                                'alist acc `((current . ,(butlast current))))))
+                     (read-duration--read-internal prompt acc active-units))
+                 (let* ((last-unit (caar (last acc)))
+                        (acc (read-duration--rename-key acc last-unit 'current))
+                        (sorted-units (map-keys
+                                       (read-duration--select-keys
+                                        read-duration-multipliers
+                                        (cons last-unit active-units)))))
+                   (read-duration--read-internal prompt acc sorted-units))))
+              ((memq ch active-units)
+               (let* ((acc (read-duration--rename-key acc 'current ch))
+                      (new-units (seq-remove (lambda (x) (= x ch))
+                                             active-units)))
                  (if (= read-duration--smallest ch)
                      acc
                    (read-duration--read-internal prompt acc new-units))))
@@ -144,7 +169,7 @@ Valid duration formats:
   (if-let* ((duration (read-duration--read-internal
                        prompt
                        '()
-                       (copy-sequence read-duration-multipliers)))
+                       (copy-sequence (map-keys read-duration-multipliers))))
             (normalized (map-apply
                          (lambda (k vs)
                            (let ((mult (map-elt read-duration-multipliers k))
