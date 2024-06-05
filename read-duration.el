@@ -115,7 +115,7 @@ The result is collected in ACC, ACTIVE-UNITS holds currently active units."
                               (list ?\C-m)))
              (ch (read-char-choice prompt* choices)))
         (cond ((= ?\C-m ch) acc)
-              ((alist-get ch active-units)
+              ((map-elt active-units ch)
                (let ((acc (read-duration--rename-key acc 'current ch))
                      (new-units (map-delete active-units ch)))
                  (if (= read-duration--smallest ch)
