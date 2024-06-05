@@ -1,4 +1,4 @@
-# `read-function`
+# `read-duration`
 
 This package provides a function that reads a human-readable time duration from
 a user and returns the value in seconds, minutes, hours or any other time unit
