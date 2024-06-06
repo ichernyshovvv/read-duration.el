@@ -39,14 +39,18 @@
 
 ;;; Code:
 
+(require 'subr-x)
+(require 'seq)
+(require 'map)
+
 (defface read-duration-shadow '((t (:inherit shadow)))
   "Face used to mark unavailable input."
   :group 'read-duration)
 
 (defcustom read-duration-multipliers
-  '((?w . 604800)
-    (?d . 86400)
-    (?h . 3600)
+  `((?w . ,(* 7 24 60 60))
+    (?d . ,(* 24 60 60))
+    (?h . ,(* 60 60))
     (?m . 60))
   "An alist of unit multipliers used in `read-duration'.
 
@@ -60,30 +64,100 @@ the associated MULTIPLIER to calculate a duration in seconds."
   :type '(alist :key-type (character :tag "Unit")
                 :value-type (number :tag "Multiplier")))
 
-(defcustom read-duration-return-units
-  '((weeks . 604800)
-    (days . 86400)
-    (hours . 3600)
-    (minutes . 60))
-  "An alist of units used to divide the result value of `read-duration'.
+(defvar read-duration--smallest
+  (caar (seq-sort (lambda (x y) (< (cdr x) (cdr y)))
+                  read-duration-multipliers))
+  "The unit with the smallest multiplier.")
 
-Each entry is a pair (UNIT . DIVISOR), where
-UNIT is a time unit symbol
-DIVISOR is a number."
-  :group 'read-duration
-  :type '(alist :key-type (character :tag "Unit")
-                :value-type (number :tag "Divisor")))
+(defun read-duration--typed-prompt (acc)
+  "Generate prompt with already typed values from from ACC."
+  (mapconcat
+   (lambda (x)
+     (concat (cdr x)
+             (if (eq 'current (car x))
+                 ""
+               (char-to-string (car x)))))
+   (seq-sort (lambda (x y)
+               ;; always make 'current the last
+               (let* ((units (append (map-keys read-duration-multipliers)
+                                     '(current)))
+                      (x-pos (seq-position units (car x)))
+                      (y-pos (seq-position units (car y))))
+                 (< x-pos y-pos)))
+             acc)
+   ""))
+
+(defun read-duration--rename-key (m old-key new-key)
+  "Rename OLD-KEY to NEW-KEY in alist M."
+  (map-apply (lambda (k v)
+               (cons (if (eq old-key k)
+                         new-key
+                       k)
+                     v))
+             m))
+
+(defun read-duration--select-keys (m keys)
+  "Select KEYS from M."
+  (map-filter (lambda (k v)
+                (when (memq k keys)
+                  (cons k v)))
+              m))
+
+(defvar read-duration-ret-char ?\C-m)
+
+(defvar read-duration-bs-char ?\C-?)
+
+(defun read-duration--read-internal (prompt acc active-units)
+  "Read a time value in the minibuffer, prompting with PROMPT.
+The result is collected in ACC, ACTIVE-UNITS holds currently active units."
+  (if active-units
+      (let* ((current (map-elt acc 'current))
+             (unit-prompt (propertize
+                           (concat "[" active-units "]")
+                           'face
+                           (unless current 'read-duration-shadow)))
+             (typed (read-duration--typed-prompt acc))
+             (prompt* (concat (propertize prompt 'face 'minibuffer-prompt)
+                              " ([0-9]+" unit-prompt "):"
+                              typed))
+             (choices (append (and current active-units)
+                              (number-sequence ?0 ?9)
+                              (unless (seq-empty-p acc)
+                                (list read-duration-bs-char))
+                              (list read-duration-ret-char)))
+             (ch (read-char-choice prompt* choices)))
+        (cond ((= read-duration-ret-char ch) acc)
+              ((= read-duration-bs-char ch)
+               (if current
+                   (let* ((acc (map-merge
+                                'alist acc `((current . ,(butlast current))))))
+                     (read-duration--read-internal prompt acc active-units))
+                 (let* ((last-unit (caar (last acc)))
+                        (acc (read-duration--rename-key acc last-unit 'current))
+                        (sorted-units (map-keys
+                                       (read-duration--select-keys
+                                        read-duration-multipliers
+                                        (cons last-unit active-units)))))
+                   (read-duration--read-internal prompt acc sorted-units))))
+              ((memq ch active-units)
+               (let* ((acc (read-duration--rename-key acc 'current ch))
+                      (new-units (seq-remove (lambda (x) (= x ch))
+                                             active-units)))
+                 (if (= read-duration--smallest ch)
+                     acc
+                   (read-duration--read-internal prompt acc new-units))))
+              (t (let ((acc (map-merge-with 'alist #'append
+                                            acc `((current . (,ch))))))
+                   (read-duration--read-internal prompt acc active-units)))))
+    acc))
 
 ;;;###autoload
-(defun read-duration (&optional prompt divisor)
+(defun read-duration (prompt &optional default)
   "Read time duration and return seconds as an integer.
 
-PROMPT is a string to prompt with.  DIVISOR is one of the units
-from `read-duration-return-units' that controls the return value.
-
-Beep or flash the screen when an invalid character is typed.  The
-prompt shows currently valid characters for the next input
-character.
+PROMPT is a string to prompt with.  DEFAULT specifies a default value to return
+if the user just types RET.  The prompt shows currently valid characters for
+the next input character.
 
 Valid duration formats:
 2h
@@ -92,70 +166,18 @@ Valid duration formats:
 45
 1d
 1w3h30m"
-  (let* ((divisor
-          (if divisor
-              (or (alist-get divisor read-duration-return-units)
-                  (user-error "Unknown time unit"))
-            1))
-         (input "")
-         (multipliers-sorted
-          (seq-sort (lambda (x y) (> (cdr x) (cdr y)))
-                    read-duration-multipliers))
-         (all-multipliers (mapcar #'car multipliers-sorted))
-         (smallest (caar (last multipliers-sorted)))
-         (valid-multipliers all-multipliers)
-         typed-multipliers
-         (seconds
-          (catch 'return-value
-            (while-let ((multipliers
-                         (propertize
-                          (concat "[" valid-multipliers "]")
-                          'face
-                          (and (or (length= input 0)
-                                   (memq (string-to-char (substring input -1))
-                                         all-multipliers))
-                               'read-duration-shadow)))
-                        (ch (read-char-exclusive
-                             (concat (or prompt "DURATION")
-                                     " ([0-9]+" multipliers "):" input))))
-              (cond
-               ((<= ?0 ch ?9)
-                (setq input (format "%s%c" input ch)))
-               ((or (and (eq ch ?\C-m) (length> input 0))
-                    (and (memq ch valid-multipliers)
-                         (string-match-p "[0-9]+$" input)))
-                (when-let (((memq ch `(,smallest ?\C-m)))
-                           (return-value 0.0)
-                           (unit (char-to-string smallest))
-                           (start 0))
-                  (setq input (concat input unit))
-                  (while (string-match
-                          (rx-to-string
-                           `(: (group (+ digit))
-                               (group (in ,@(cons unit typed-multipliers)))))
-                          input start)
-                    (cl-incf return-value
-                             (* (alist-get
-                                 (string-to-char (match-string 2 input))
-                                 read-duration-multipliers)
-                                (string-to-number (match-string 1 input))))
-                    (setq start (match-end 0)))
-                  (throw 'return-value return-value))
-                (setq input (format "%s%c" input ch)
-                      valid-multipliers (cdr (memq ch valid-multipliers)))
-                (push ch typed-multipliers))
-               ((and (eq ?\C-? ch) (not (length= input 0)))
-                (when (eq (string-to-char (substring input -1))
-                          (car typed-multipliers))
-                  (pop typed-multipliers)
-                  (setq valid-multipliers
-                        (let ((ms all-multipliers))
-                          (when typed-multipliers
-                            (while (not (eq (pop ms) (car typed-multipliers)))))
-                          ms)))
-                (setq input (substring input 0 -1)))
-               (t (ding)))))))
-    (/ seconds divisor)))
+  (if-let* ((duration (read-duration--read-internal
+                       prompt
+                       '()
+                       (copy-sequence (map-keys read-duration-multipliers))))
+            (normalized (map-apply
+                         (lambda (k vs)
+                           (let ((mult (map-elt read-duration-multipliers k))
+                                 (value (string-to-number (concat vs))))
+                             (* value mult)))
+                         duration)))
+      (seq-reduce #'+ normalized 0)
+    default))
 
 (provide 'read-duration)
 
