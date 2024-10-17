@@ -47,7 +47,8 @@
   '((?w . 604800)
     (?d . 86400)
     (?h . 3600)
-    (?m . 60))
+    (?m . 60)
+    (?s . 1))
   "An alist of unit multipliers used in `read-duration'.
 
 Each entry is a pair (UNIT . MULTIPLIER), where
